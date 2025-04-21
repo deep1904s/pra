@@ -1,0 +1,113 @@
+pip install hmmlearn
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from hmmlearn import hmm
+from sklearn.preprocessing import KBinsDiscretizer
+from sklearn.mixture import GaussianMixture
+
+np.random.seed(42)
+states = ['Sunny', 'Cloudy', 'Rainy']
+state_mapping = {state: i for i, state in enumerate(states)}
+n_states = len(states)
+
+# Emission parameters (mean and std for temp and humidity)
+emission_params = {
+    'Sunny': {'temp': (30, 5), 'humidity': (30, 10)},
+    'Cloudy': {'temp': (20, 5), 'humidity': (60, 10)},
+    'Rainy': {'temp': (18, 4), 'humidity': (85, 5)}
+}# Emission parameters (mean and std for temp and humidity)
+emission_params = {
+    'Sunny': {'temp': (30, 5), 'humidity': (30, 10)},
+    'Cloudy': {'temp': (20, 5), 'humidity': (60, 10)},
+    'Rainy': {'temp': (18, 4), 'humidity': (85, 5)}
+}
+
+
+# Generate sequences
+def generate_weather_sequence(length):
+    observations = []
+    hidden_states = []
+    state = np.random.choice(states)
+    
+    for _ in range(length):
+        temp_mu, temp_sigma = emission_params[state]['temp']
+        hum_mu, hum_sigma = emission_params[state]['humidity']
+        
+        temp = np.random.normal(temp_mu, temp_sigma)
+        humidity = np.random.normal(hum_mu, hum_sigma)
+        
+        observations.append([temp, humidity])
+        
+        hidden_states.append(state_mapping[state])
+        
+        state = np.random.choice(states, p=[0.6 if s==state else 0.2 for s in states])
+    return np.array(observations), np.array(hidden_states)
+    # Generate sequences
+def generate_weather_sequence(length):
+    observations = []
+    hidden_states = []
+    state = np.random.choice(states)
+    
+    for _ in range(length):
+        temp_mu, temp_sigma = emission_params[state]['temp']
+        hum_mu, hum_sigma = emission_params[state]['humidity']
+        
+        temp = np.random.normal(temp_mu, temp_sigma)
+        humidity = np.random.normal(hum_mu, hum_sigma)
+        
+        observations.append([temp, humidity])
+        
+        hidden_states.append(state_mapping[state])
+        
+        state = np.random.choice(states, p=[0.6 if s==state else 0.2 for s in states])
+    return np.array(observations), np.array(hidden_states)
+    
+
+X, y = generate_weather_sequence(1000)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+
+# Discretize the continuous observations
+kbin = KBinsDiscretizer(n_bins=5, encode='ordinal', strategy='uniform')
+X_train_disc = kbin.fit_transform(X_train)
+X_test_disc = kbin.transform(X_test)
+
+
+# Flatten 2D to 1D tokens by combining temp & humidity bins
+X_train_tokens = (X_train_disc[:, 0] * 10 + X_train_disc[:, 1]).astype(int).reshape(-1, 1)
+X_test_tokens = (X_test_disc[:, 0] * 10 + X_test_disc[:, 1]).astype(int).reshape(-1, 1)
+
+
+# Train discrete HMM
+model_discrete = hmm.MultinomialHMM(n_components=n_states, n_iter=100, random_state=42)
+model_discrete.fit(X_train_tokens)
+y_pred_disc = model_discrete.predict(X_test_tokens)
+
+
+model_continuous = hmm.GaussianHMM(n_components=n_states, covariance_type='full', n_iter=100, random_state=42)
+model_continuous.fit(X_train)
+y_pred_cont = model_continuous.predict(X_test)
+
+
+# Section 5: Evaluation
+print("=== Evaluation Metrics ===")
+print("Discrete HMM Accuracy:", accuracy_score(y_test, y_pred_disc))
+print("Continuous HMM Accuracy:", accuracy_score(y_test, y_pred_cont))
+
+
+# Additional comparison plot for first 50 time steps
+plt.figure(figsize=(10, 4))
+plt.plot(y_test[:50], "bo-", label="True States")
+plt.plot(y_pred_disc[:50], "r--", label="Discrete HMM")
+plt.plot(y_pred_cont[:50], "g.-", label="Continuous HMM")
+plt.legend()
+plt.xlabel("Time Step")
+plt.ylabel("State (0:Sunny, 1:Cloudy, 2:Rainy)")
+plt.title("Comparison of True vs Predicted States (First 50 Samples)")
+plt.grid(True)
+plt.show()
